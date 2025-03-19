@@ -1,34 +1,40 @@
 from microdot import Microdot, Response
-import random
-from machine import ADC
+from machine import ADC, Pin
 import json
-import socket
 import network
+import time
 
-
-
-# setup koneksi wifi
+# Setup koneksi WiFi
 ssid = "BOE-"
 password = ""
 
-#get data wifi otomatis
+# Hubungkan ke WiFi
+wifi = network.WLAN(network.STA_IF)
+wifi.active(True)
+wifi.connect(ssid, password)
 
+# Tunggu sampai terhubung
+print("Menghubungkan ke WiFi...")
+while not wifi.isconnected():
+    time.sleep(1)
+    print("Menghubungkan...")
 
-#hubungkan ke wifi
-hostname = socket.gethostname()  # Mendapatkan nama host
-ip_address = socket.gethostbyname(hostname)  # Mendapatkan IP lokal
+print("Terhubung ke WiFi")
+ip_address = wifi.ifconfig()[0]
+print("IP Address:", ip_address)
 
-#inisialisasi microdot
+# Inisialisasi Microdot
 app = Microdot()
 Response.default_content_type = 'application/json'
 
-# Inisialisasi sensor (contoh, sesuaikan dengan pin dan library yang digunakan)
-temp_sensor = round(random.uniform(20, 35), 2)  #sensor suhu
-ph_sensor = round(random.uniform(60, 100), 2) #sensor kelembapan
-tds_sensor = round(random.uniform(6.5, 9.0), 2) #kadar garam
-o2_sensor = round(random.uniform(20, 35), 2) #kadar oksigen
-turbidity_sensor = round(random.uniform(20, 35), 2) #sensor kekeruhan
-relay_pump = machine.Pin(15, machine.Pin.OUT)
+# Inisialisasi sensor (gunakan pin yang valid untuk ADC pada Pico W)
+adc_temp = ADC(Pin(26))  # GPIO 26 (ADC0)
+adc_ph = ADC(Pin(27))    # GPIO 27 (ADC1)
+adc_tds = ADC(Pin(28))   # GPIO 28 (ADC2)
+adc_o2 = ADC(Pin(29))    # GPIO 29 (ADC3, sensor suhu internal)
+adc_turbidity = ADC(Pin(26))  # GPIO 26 (ADC0, contoh)
+
+relay_pump = Pin(15, Pin.OUT)  # GPIO 15 untuk relay
 
 # Ambang batas sensor
 TEMP_THRESHOLD = 30.0  # Contoh batas suhu dalam derajat Celsius
@@ -36,33 +42,32 @@ PH_LOW = 6.5
 PH_HIGH = 8.5
 TURBIDITY_THRESHOLD = 2.0  # Nilai ambang batas kekeruhan (contoh)
 
-
 def read_sensor(sensor):
     return sensor.read_u16() / 65535 * 3.3  # Konversi ke tegangan
 
-
 def check_conditions():
-    temp_value = read_sensor(temp_sensor) * 10  # Konversi contoh
-    ph_value = read_sensor(ph_sensor) * 3
-    turbidity_value = read_sensor(turbidity_sensor) * 5
+    temp_value = read_sensor(adc_temp) * 10  # Konversi contoh
+    ph_value = read_sensor(adc_ph) * 3
+    turbidity_value = read_sensor(adc_turbidity) * 5
 
     if temp_value > TEMP_THRESHOLD or turbidity_value > TURBIDITY_THRESHOLD or not (PH_LOW <= ph_value <= PH_HIGH):
         relay_pump.value(1)  # Nyalakan pompa jika kondisi tidak sesuai
     else:
         relay_pump.value(0)  # Matikan pompa jika kondisi baik
 
-#route API data sensor
+# Route API data sensor
 @app.route('/data')
 def get_data(request):
     check_conditions()
     data = {
-        "temperature": read_sensor(temp_sensor) * 10,
-        "ph": read_sensor(ph_sensor) * 3,
-        "tds": read_sensor(tds_sensor),
-        "oxygen": read_sensor(o2_sensor),
-        "turbidity": read_sensor(turbidity_sensor) * 5,
+        "temperature": read_sensor(adc_temp) * 10,
+        "ph": read_sensor(adc_ph) * 3,
+        "tds": read_sensor(adc_tds),
+        "oxygen": read_sensor(adc_o2),
+        "turbidity": read_sensor(adc_turbidity) * 5,
         "pump_status": "ON" if relay_pump.value() else "OFF"
     }
+    print(data)
     return json.dumps(data)
 
 @app.route('/pump/<action>')
@@ -73,10 +78,6 @@ def control_pump(request, action):
         relay_pump.value(0)
     return json.dumps({"pump_status": "ON" if relay_pump.value() else "OFF"})
 
-
-
-
 # Mulai server
-print(ip_address)
+print("Server berjalan di http://{}:5000".format(ip_address))
 app.run(debug=True, host=ip_address, port=5000)
-

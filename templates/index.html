@@ -29,10 +29,10 @@
     <!-- Fetch API Data -->
     <script>
         async function fetchData() {
-            const response = await fetch('/api/data');
+            const response = await fetch('/data');
             const data = await response.json();
             document.getElementById('temperature').innerText = data.temperature;
-            document.getElementById('humidity').innerText = data.humidity;
+            document.getElementById('ph').innerText = data.ph
         }
 
         // Update data setiap 5 detik
